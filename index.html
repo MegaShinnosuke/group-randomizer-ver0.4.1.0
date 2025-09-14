@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>グループ分けツール</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#B0E0E6">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,"メイリオ",sans-serif; padding:15px; background:#B0E0E6; color:#000; }
+h1 { text-align:center; font-size:1.8em; margin-bottom:10px; }
+p { text-align:center; font-size:0.9em; color:#333; margin-bottom:15px; }
+button { display:block; width:100%; padding:12px; margin:10px 0; font-size:16px; background:#B3F5DD; color:#000; border:none; border-radius:8px; cursor:pointer; }
+button:hover { opacity:0.8; }
+#result { white-space:pre-wrap; background-color:#fff; color:#000; padding:15px; border-radius:10px; margin-top:20px; font-family:"Courier New",monospace; font-size:15px; max-height:300px; overflow-y:auto; }
+#nameGrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+.nameItem { display:flex; align-items:center; padding:6px 10px; border:1px solid #444; border-radius:6px; background:#fff; cursor:pointer; }
+.nameItem.selected { background:#D1E8E2; }
+.nameItem input { width:16px; height:16px; margin-right:8px; accent-color:#000; }
+
+/* モーダル共通（iOSでキーボードが出るように調整） */
+.overlay { display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); padding:24px 16px; box-sizing:border-box; overflow:auto; z-index:9999; }
+.modal { background:#fff; padding:18px; border-radius:12px; width:100%; max-width:400px; margin:40px auto; box-sizing:border-box; max-height:90vh; overflow:auto; }
+.modal h2 { margin:0 0 12px 0; font-size:1.2em; }
+.modal input { width:calc(100% - 24px); box-sizing:border-box; padding:10px 12px; margin:8px 0; border-radius:8px; border:1px solid #333; text-align:center; font-size:16px; }
+
+.actions { display:flex; gap:12px; margin-top:16px; }
+.actions button { flex:1; border-radius:8px; font-size:15px; padding:10px; }
+.actions .cancel { background:#ccc; }
+.actions .submit { background:#B3F5DD; }
+
+#deleteList { margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.deleteItem { display:flex; align-items:center; padding:6px 10px; border:1px solid #444; border-radius:6px; background:#fff; }
+.deleteItem input { width:16px; height:16px; margin-right:8px; accent-color:#000; }
+</style>
+</head>
+<body>
+<h1>グループ分けツール</h1>
+<p>チェックを入れた人だけでグループ分けできます（出力時に「ちゃん」が付きます）</p>
+
+<button onclick="openModal()">👤 ＋新規登録</button>
+<button onclick="openDeleteModal()">🗑 メンバー削除</button>
+
+<div id="nameGrid"></div>
+
+<button onclick="makeGroups()">👻 グループ作成</button>
+<button onclick="resetResult()">🗑 履歴リセット</button>
+<button onclick="copyResult()">✔️ 結果をコピー</button>
+
+<div id="result"></div>
+
+<div id="modalOverlay" class="overlay">
+  <div class="modal">
+    <h2>🆕 メンバー登録</h2>
+    <input type="text" id="newDisplay" placeholder="表示名を入力">
+    <input type="text" id="newOutput" placeholder="出力名を入力">
+    <div class="actions">
+      <button class="cancel" onclick="closeModal()">キャンセル</button>
+      <button class="submit" onclick="addMember()">登録する</button>
+    </div>
+  </div>
+</div>
+
+<div id="deleteModalOverlay" class="overlay">
+  <div class="modal">
+    <h2>⚠ 削除するメンバーを選択</h2>
+    <div id="deleteList"></div>
+    <div class="actions">
+      <button class="cancel" onclick="closeDeleteModal()">閉じる</button>
+      <button class="submit" onclick="deleteSelected()">削除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let members=[{display:"Hei",output:"へいちゃん"},{display:"sabaris",output:"さばちゃん"},{display:"Lapis",output:"ラピちゃん"},{display:"TAMA",output:"たまちゃん"},{display:"しばじろう",output:"しばちゃん"},{display:"カイ",output:"カイちゃん"},{display:"しろ子",output:"しろちゃん"},{display:"サクヤ",output:"わんわんサクちゃん"},{display:"すい",output:"すいちゃん"},{display:"たい",output:"たいちゃん"},{display:"たかこっこ",output:"たかちゃん"},{display:"ぬーえ",output:"ぬえちゃん"},{display:"まみみ",output:"まみちゃん"},{display:"まめしばぁぁぁ",output:"まめちゃん"},{display:"み～こ",output:"み～ちゃん"},{display:"めがむー",output:"めがちゃん"},{display:"ももんが",output:"ももちゃん"},{display:"りあ",output:"りあちゃん"},{display:"アイリーン",output:"アイちゃん"},{display:"コロボックル",output:"コロちゃん"},{display:"ディ・マリア大佐",output:"ベジータちゃん"},{display:"ミズキ",output:"ミズちゃん"},{display:"メメノア",output:"メメちゃん"},{display:"茶々",output:"ちゃちゃちゃん"},{display:"Ren",output:"レンちゃん"},{display:"シンノスケ",output:"しんちゃん"},{display:"Echidna",output:"エキちゃん"}];
+
+function renderGrid(){
+  const grid=document.getElementById("nameGrid"); grid.innerHTML="";
+  members.forEach((m,idx)=>{
+    const item=document.createElement("div"); item.className="nameItem";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.id="chk"+idx;
+    const label=document.createElement("label"); label.setAttribute("for","chk"+idx); label.textContent=m.display;
+    cb.addEventListener("change",()=>{item.classList.toggle("selected",cb.checked)});
+    item.appendChild(cb); item.appendChild(label);
+    grid.appendChild(item);
+  });
+}
+renderGrid();
+
+/* 新規登録 */
+function openModal(){ document.getElementById("modalOverlay").style.display="block"; }
+function closeModal(){ document.getElementById("modalOverlay").style.display="none"; }
+function addMember(){
+  const d=document.getElementById("newDisplay").value.trim();
+  const o=document.getElementById("newOutput").value.trim();
+  if(!d||!o)return;
+  if(members.some(m=>m.display===d)){ alert("同名のメンバーは登録できません"); return; }
+  members.push({ display:d, output:o+"ちゃん" });
+  renderGrid(); closeModal();
+  document.getElementById("newDisplay").value=""; document.getElementById("newOutput").value="";
+}
+
+/* メンバー削除 */
+function openDeleteModal(){ 
+  document.getElementById("deleteModalOverlay").style.display="block"; 
+  const list=document.getElementById("deleteList"); list.innerHTML="";
+  members.forEach((m,idx)=>{
+    const item=document.createElement("div"); item.className="deleteItem";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.id="del"+idx;
+    const label=document.createElement("label"); label.setAttribute("for","del"+idx); label.textContent=m.display;
+    item.appendChild(cb); item.appendChild(label);
+    list.appendChild(item);
+  });
+}
+function closeDeleteModal(){ document.getElementById("deleteModalOverlay").style.display="none"; }
+function deleteSelected(){
+  const toDel=[]; members.forEach((m,idx)=>{ const cb=document.getElementById("del"+idx); if(cb.checked) toDel.push(idx); });
+  if(toDel.length===0) return; if(!confirm("このメンバーを削除しますか？")) return;
+  for(let i=toDel.length-1;i>=0;i--){ members.splice(toDel[i],1); }
+  renderGrid(); closeDeleteModal();
+}
+
+/* グループ分け */
+let historyLog={};
+function makeGroups(){
+  const checkedMembers=[]; members.forEach((m,idx)=>{ const cb=document.getElementById("chk"+idx); if(cb.checked) checkedMembers.push(m.output); });
+  if(checkedMembers.length===0) return;
+  for(let i=checkedMembers.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [checkedMembers[i],checkedMembers[j]]=[checkedMembers[j],checkedMembers[i]]; }
+
+  const groupSizes=[]; let rem=checkedMembers.length;
+  while(rem>0){ if(rem>=4){ groupSizes.push(4); rem-=4; } else { groupSizes.push(rem); rem=0; } }
+
+  const groups=[]; let idx=0; for(let size of groupSizes){ groups.push(checkedMembers.slice(idx,idx+size)); idx+=size; }
+
+  const labels="ABCDEFGHIJKLMNOPQRSTUVWXYZ"; const now=new Date();
+  const dateStr=now.toLocaleDateString("ja-JP",{year:"2-digit",month:"2-digit",day:"2-digit"})+" "+now.toTimeString().slice(0,5);
+  let output="☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆\n"+dateStr+" 時点\n※左の人から貼っていこー！\n\n";
+  groups.forEach((g,i)=>{ output+=`ｸﾞﾙｰﾌﾟ${labels[i]}（${g.length}人）：${g.join("、")}\n-------------------------------\n`; });
+  output+="\n☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆☆";
+  document.getElementById("result").innerText=output;
+}
+
+function resetResult(){ document.getElementById("result").innerText=""; historyLog={}; }
+function copyResult(){ navigator.clipboard.writeText(document.getElementById("result").innerText).then(()=>alert("結果をコピーしました！"),err=>alert("コピーに失敗しました: "+err)); }
+</script>
+</body>
+</html>
